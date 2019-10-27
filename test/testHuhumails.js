@@ -42,7 +42,7 @@ describe('app', async function() {
 
   it('should subscribe to list', async function() {
     const returnObj = await huhumails.subscribe({listIds: listToTest.listId, 
-      emails: ['mnv2k2@gmail.com', 'mnv2k3@gmail.com', 'mnv2k4@gmail.com']});
+      emails: zconf.subscribeEmails});
 
     assert(returnObj.msg === 'success');
 
@@ -51,7 +51,7 @@ describe('app', async function() {
 
 
   it('should unsubscribe to list', async function() {
-    const returnObj = await huhumails.unsubscribe({listIds: listToTest.listId, emails: ['mnv2k3@gmail.com']});
+    const returnObj = await huhumails.unsubscribe({listIds: listToTest.listId, emails: zconf.unsubscribeEmails});
 
     assert(returnObj.msg === 'success');
 
@@ -80,6 +80,33 @@ Regards,
     );
 
     assert(returnObj.msg === 'success');
+
+    return true;
+
+  })
+
+
+  it('should send email list', async function() {
+    const returnObj = await huhumails.emailToList({
+      conf: {
+        dontEmail: false,
+      },
+
+      listId: 'test-list-id-2',
+      fr:  zconf.fr,
+      subj: 'Test Subject With Unsubscribe',
+      body: `Hi,
+
+This is a test email.
+
+Regards,
+`
+
+      }
+    );
+
+    
+    assert(returnObj.count === 3);
 
     return true;
 
