@@ -1,0 +1,28 @@
+{
+  "name": "huhumails",
+  "version": "1.0.0",
+  "description": "Node JS API library for huhumails.com",
+  "main": "HuhuMailsEngine.js",
+  "scripts": {
+    "test": "mocha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mannyvergel/huhumails-js.git"
+  },
+  "keywords": [
+    "huhumails",
+    "nodejs",
+    "API"
+  ],
+  "author": "Manny Vergel",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/mannyvergel/huhumails-js/issues"
+  },
+  "homepage": "https://github.com/mannyvergel/huhumails-js#readme",
+  "dependencies": {
+    "request": "^2.88.0",
+    "request-promise-native": "^1.0.7"
+  }
+}
