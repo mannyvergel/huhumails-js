@@ -1,6 +1,6 @@
 {
   "name": "huhumails",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Node JS API library for huhumails.com",
   "main": "HuhuMailsEngine.js",
   "scripts": {
@@ -22,7 +22,5 @@
   },
   "homepage": "https://github.com/mannyvergel/huhumails-js#readme",
   "dependencies": {
-    "request": "^2.88.0",
-    "request-promise-native": "^1.0.7"
   }
 }

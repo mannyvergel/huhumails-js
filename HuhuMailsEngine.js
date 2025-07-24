@@ -1,194 +1,238 @@
 'use strict';
 
-const request = require('request-promise-native');
 const defaultConf = require('./conf/defaultConf.js');
 const genUtils = require('./lib/genUtils.js');
 
 class HuhuMailsEngine {
 
+  /**
+   * The constructor for the HuhuMailsEngine.
+   * @param {object} [conf] - Optional configuration to override defaults.
+   */
   constructor(conf) {
     this.conf = defaultConf;
-    this.conf = this.extendedConfIfNeeded(conf);
+    this.conf = this._extendedConfIfNeeded(conf);
 
     if (this.conf.isDebug) {
       console.debug("Huhumails initiated", this.conf);
     }
   }
 
-  extendedConfIfNeeded(conf) {
-    if (conf) {
-      return Object.assign({}, this.conf, conf);
-    }
-
-    return this.conf;
+  // Private helper to merge user-provided configuration with the defaults.
+  _extendedConfIfNeeded(conf) {
+    return conf ? { ...this.conf, ...conf } : this.conf;
   }
 
-  async email({
-    to, fr, subj, body, cc, bcc, conf
-  }) {
+  // Private helper method to perform a POST request using the native fetch API.
+  async _postRequest(url, formData) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams(formData),
+      });
 
-    conf = this.extendedConfIfNeeded(conf);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+      }
+
+      return await response.json();
+
+    } catch (error) {
+      console.error('Fetch request failed:', error);
+      throw error;
+    }
+  }
+  
+  // Private helper to apply transformations to the email body.
+  async _applyBodyChanges(body, conf) {
+    let modifiedBody = body;
+    if (conf.bodyTransform) {
+      modifiedBody = await conf.bodyTransform(modifiedBody);
+    }
+  
+    if (conf.replaceNewLineWithBr) {
+      if (conf.bodyTransform) {
+        console.warn("Warning: 'bodyTransform' is active and might conflict with 'replaceNewLineWithBr'.");
+      }
+      modifiedBody = modifiedBody.replace(/\n/g, '<br/>');
+    }
+  
+    return modifiedBody;
+  }
+
+  /**
+   * Sends an email to one or more recipients.
+   * @param {object} options - The email options.
+   * @param {string|string[]} options.to - The recipient's email address or an array of addresses.
+   * @param {string} [options.fr] - The sender's email address. Defaults to `conf.defaultFrom`.
+   * @param {string} options.subj - The email subject.
+   * @param {string} options.body - The HTML body of the email.
+   * @param {string|string[]} [options.cc] - CC recipients.
+   * @param {string|string[]} [options.bcc] - BCC recipients.
+   * @param {object} [options.conf] - Optional configuration to override instance defaults.
+   * @returns {Promise<object>} A promise that resolves to a success message.
+   */
+  async email({ to, fr, subj, body, cc, bcc, conf }) {
+    conf = this._extendedConfIfNeeded(conf);
     
     if (cc || bcc) {
-      console.warn("cc bcc doesn't work yet.");
+      console.warn("cc and bcc functionality is not yet implemented.");
     }
 
-    if (!genUtils.isArray(to)) {
+    if (!Array.isArray(to)) {
       to = [to];
     }
 
     fr = fr || conf.defaultFrom;
 
     if (!fr) {
-      throw new Error("(fr) is required");
+      throw new Error("A 'from' address (fr) is required.");
     }
 
     const addUnsubscribe = conf.sendEmailAddUnsubscribe ? 'y' : null;
     const listId = conf.sendEmailListId;
 
-    body = await applyBodyChanges(body, conf);
+    body = await this._applyBodyChanges(body, conf);
 
     if (conf.emailOneByOne) {
-      for (let toEmail of to) {
-        await genUtils.doEmail({to: toEmail, fr, subj, body, cc, bcc, listId, addUnsubscribe, conf});
+      for (const toEmail of to) {
+        await genUtils.doEmail({ to: toEmail, fr, subj, body, cc, bcc, listId, addUnsubscribe, conf });
 
         if (conf.delayPerEmailMs) {
           await genUtils.sleep(conf.delayPerEmailMs);
         }
       }
     } else {
-      await genUtils.doEmail({to, fr, subj, body, cc, bcc, listId, addUnsubscribe, conf});
+      await genUtils.doEmail({ to, fr, subj, body, cc, bcc, listId, addUnsubscribe, conf });
     }
 
-    return {msg: 'success'};
+    return { msg: 'success' };
   }
 
-  async emailToList({listId, exclude, fr, subj, body, txtBody, replyTo, conf}) {
-    conf = this.extendedConfIfNeeded(conf);
+  /**
+   * Sends an email to all subscribers of a mailing list.
+   * @param {object} options - The options for sending to a list.
+   * @param {string} options.listId - The ID of the mailing list.
+   * @param {string[]} [options.exclude] - An array of email addresses to exclude from this sending.
+   * @param {string} [options.fr] - The sender's email address. Defaults to `conf.defaultFrom`.
+   * @param {string} options.subj - The email subject.
+   * @param {string} options.body - The HTML body of the email.
+   * @param {string} [options.txtBody] - The plain text body of the email.
+   * @param {string} [options.replyTo] - The reply-to address for the email.
+   * @param {object} [options.conf] - Optional configuration to override instance defaults.
+   * @returns {Promise<object>} A promise that resolves to the API response.
+   */
+  async emailToList({ listId, exclude, fr, subj, body, txtBody, replyTo, conf }) {
+    conf = this._extendedConfIfNeeded(conf);
     if (!listId) {
-      throw new Error("List id is required");
+      throw new Error("A list ID is required.");
     }
 
     fr = fr || conf.defaultFrom;
 
     if (!fr) {
-      throw new Error("(fr) is required");
+      throw new Error("A 'from' address (fr) is required.");
     }
 
-    body = await applyBodyChanges(body, conf);
+    body = await this._applyBodyChanges(body, conf);
 
-    const form = {
-      apiKey: conf.apiKey,
-      listId,
-      exclude,
-      fr,
-      subj,
-      body,
-      txtBody,
-      replyTo
-    }
+    const form = { apiKey: conf.apiKey, listId, exclude, fr, subj, body, txtBody, replyTo };
+    const url = `${this.conf.urlPrefix}/send-email-to-list`;
 
-    const postReturn = await request.post({url: this.conf.urlPrefix + '/send-email-to-list', form: form});
-    console.log("emailToList", listId);
-
-    return JSON.parse(postReturn);
+    console.log("Sending email to list:", listId);
+    return this._postRequest(url, form);
   }
 
-  async subscribe({emails, listIds, conf}) {
-    conf = this.extendedConfIfNeeded(conf);
-
-    const form = {
-      apiKey: conf.apiKey,
-      emails,
-      listIds
-    }
-
-    const postReturn = await request.post({url: this.conf.urlPrefix + '/subscribe', form: form});
-    console.log("Subscribed", emails, listIds);
-
-    return JSON.parse(postReturn);
+  /**
+   * Subscribes one or more emails to one or more mailing lists.
+   * @param {object} options - The subscription options.
+   * @param {string|string[]} options.emails - An email address or array of addresses to subscribe.
+   * @param {string|string[]} options.listIds - A list ID or array of list IDs to subscribe to.
+   * @param {object} [options.conf] - Optional configuration to override instance defaults.
+   * @returns {Promise<object>} A promise that resolves to the API response.
+   */
+  async subscribe({ emails, listIds, conf }) {
+    conf = this._extendedConfIfNeeded(conf);
+    const form = { apiKey: conf.apiKey, emails, listIds };
+    const url = `${this.conf.urlPrefix}/subscribe`;
+    
+    console.log("Subscribing emails:", emails, "to lists:", listIds);
+    return this._postRequest(url, form);
   }
 
-  async unsubscribe({emails, listIds, conf}) {
-    conf = this.extendedConfIfNeeded(conf);
+  /**
+   * Unsubscribes one or more emails from one or more mailing lists.
+   * @param {object} options - The unsubscription options.
+   * @param {string|string[]} options.emails - An email address or array of addresses to unsubscribe.
+   * @param {string|string[]} options.listIds - A list ID or array of list IDs to unsubscribe from.
+   * @param {object} [options.conf] - Optional configuration to override instance defaults.
+   * @returns {Promise<object>} A promise that resolves to the API response.
+   */
+  async unsubscribe({ emails, listIds, conf }) {
+    conf = this._extendedConfIfNeeded(conf);
+    const form = { apiKey: conf.apiKey, emails, listIds };
+    const url = `${conf.urlPrefix}/unsubscribe`;
     
-    const form = {
-      apiKey: conf.apiKey,
-      emails,
-      listIds
-    }
-
-    const postReturn = await request.post({url: conf.urlPrefix + '/unsubscribe', form: form});
-    console.log("Unsubscribed", emails, listIds);
-    
-    return JSON.parse(postReturn);
+    console.log("Unsubscribing emails:", emails, "from lists:", listIds);
+    return this._postRequest(url, form);
   }
 
-  async isSubscribed({email, listId, conf}) {
-    conf = this.extendedConfIfNeeded(conf);
-    
-    const form = {
-      apiKey: conf.apiKey,
-      email,
-      listId
-    }
+  /**
+   * Checks if an email address is subscribed to a specific mailing list.
+   * @param {object} options - The subscription check options.
+   * @param {string} options.email - The email address to check.
+   * @param {string} options.listId - The list ID to check against.
+   * @param {object} [options.conf] - Optional configuration to override instance defaults.
+   * @returns {Promise<boolean>} A promise that resolves to true if subscribed, false otherwise.
+   */
+  async isSubscribed({ email, listId, conf }) {
+    conf = this._extendedConfIfNeeded(conf);
+    const form = { apiKey: conf.apiKey, email, listId };
+    const url = `${conf.urlPrefix}/is-subscribed`;
 
-    const postReturn = await request.post({url: conf.urlPrefix + '/is-subscribed', form: form});
-    console.log("isSubscribed", listId, email);
+    console.log("Checking subscription for:", email, "in list:", listId);
+    const jsonBody = await this._postRequest(url, form);
     
-    const jsonBody = JSON.parse(postReturn);
-    return (jsonBody && jsonBody.data && jsonBody.data.isSubscribed === 'Y');
+    return jsonBody?.data?.isSubscribed === 'Y';
   }
 
-  async ensureMailingList({listId, listDesc, conf}) {
-    conf = this.extendedConfIfNeeded(conf);
+  /**
+   * Ensures a mailing list exists. If it doesn't, it will be created.
+   * @param {object} options - The mailing list options.
+   * @param {string} options.listId - The ID of the list to create or ensure exists.
+   * @param {string} [options.listDesc] - A description for the mailing list.
+   * @param {object} [options.conf] - Optional configuration to override instance defaults.
+   * @returns {Promise<object>} A promise that resolves to the API response.
+   */
+  async ensureMailingList({ listId, listDesc, conf }) {
+    conf = this._extendedConfIfNeeded(conf);
+    const form = { apiKey: conf.apiKey, listId, listDesc };
+    const url = `${conf.urlPrefix}/ensure-mailing-list`;
 
-    const form = {
-      apiKey: conf.apiKey,
-      listId,
-      listDesc
-    }
-
-    const postReturn = await request.post({url: conf.urlPrefix + '/ensure-mailing-list', form: form});
-
-    console.log("Mailing list ensured", listId, listDesc);
-    
-    return JSON.parse(postReturn);
+    console.log("Ensuring mailing list exists:", listId, listDesc);
+    return this._postRequest(url, form);
   }
 
-  async getSubscribedEmails({listId, conf}) {
-    conf = this.extendedConfIfNeeded(conf);
-    
-    const form = {
-      apiKey: conf.apiKey,
-      listId
-    }
+  /**
+   * Retrieves all subscribed email addresses for a given mailing list.
+   * @param {object} options - The options.
+   * @param {string} options.listId - The ID of the mailing list.
+   * @param {object} [options.conf] - Optional configuration to override instance defaults.
+   * @returns {Promise<object>} A promise that resolves to the API response containing the emails.
+   */
+  async getSubscribedEmails({ listId, conf }) {
+    conf = this._extendedConfIfNeeded(conf);
+    const form = { apiKey: conf.apiKey, listId };
+    const url = `${this.conf.urlPrefix}/get-subscribed-emails`;
 
-    const postReturn = await request.post({url: conf.urlPrefix + '/get-subscribed-emails', form: form});
-
-    console.log("Mailing list ensured", listId, listDesc);
-
-    return JSON.parse(postReturn);
+    console.log("Getting subscribed emails for list:", listId);
+    return this._postRequest(url, form);
   }
-
 }
 
-
-async function applyBodyChanges(body, conf) {
-  if (conf.bodyTransform) {
-    body = await conf.bodyTransform(body);
-  }
-
-  if (conf.replaceNewLineWithBr) {
-    if (conf.bodyTransform) {
-      console.warn("bodyTransform is not nil and replaceNewLineWithBr might conflict.");
-    }
-
-    body = body.replace(/\n/g, '<br/>');
-  }
-
-  return body;
-}
-
-
+// Export the class for use with require()
 module.exports = HuhuMailsEngine;
