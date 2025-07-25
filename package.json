@@ -1,6 +1,6 @@
 {
   "name": "huhumails",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Node JS API library for huhumails.com",
   "main": "HuhuMailsEngine.js",
   "scripts": {
